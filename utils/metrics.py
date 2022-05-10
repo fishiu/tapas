@@ -58,7 +58,9 @@ class SqaMetric:
                     all_q_correct = False
             if all_q_correct: seq_cor += 1
 
-        print("Sequence Accuracy = %0.2f%% (%d/%d)" % (100.0 * seq_cor / seq_cnt, seq_cor, seq_cnt))
-        print("Answer Accuracy =   %0.2f%% (%d/%d)" % (100.0 * ans_cor / ans_cnt, ans_cor, ans_cnt))
+        # print("Sequence Accuracy = %0.2f%% (%d/%d)" % (100.0 * seq_cor / seq_cnt, seq_cor, seq_cnt))
+        # print("Answer Accuracy =   %0.2f%% (%d/%d)" % (100.0 * ans_cor / ans_cnt, ans_cor, ans_cnt))
+        # return [seq_cor, seq_cnt, ans_cor, ans_cnt]
 
-        return [seq_cor, seq_cnt, ans_cor, ans_cnt]
+        return ("Sequence Accuracy = %0.2f%% (%d/%d)" % (100.0 * seq_cor / seq_cnt, seq_cor, seq_cnt),
+                "Answer Accuracy =   %0.2f%% (%d/%d)" % (100.0 * ans_cor / ans_cnt, ans_cor, ans_cnt))
