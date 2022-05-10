@@ -1,0 +1,1 @@
+nohup /anaconda/envs/table/bin/python tapas-finetune.py --shuffle --output_dir=output/0508/1_shuffle > output/0508/1_shuffle.nohup 2>&1 &
