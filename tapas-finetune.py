@@ -24,7 +24,7 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer,
 
     total_step = 0
     best_valid_loss = 10000
-    for epoch in range(10):  # loop over the dataset multiple times
+    for epoch in range(args.epochs):  # loop over the dataset multiple times
         lg.info(f"Epoch: {epoch}")
         data_iter = tqdm(enumerate(train_dataloader), total=len(train_dataloader), disable=True)
         for idx, batch in data_iter:
@@ -46,21 +46,26 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer,
             lg.info(f"[TRAIN] epoch: {epoch}, step: {idx} / {len(train_dataloader)}, loss: {loss.item()}")
             loss.backward()
             optimizer.step()
-
-            if total_step % 100 == 0:
-                valid_loss = evaluate(model, valid_dataloader, tokenizer, args.valid_tsv)
-                lg.info(f"[VALID] epoch: {epoch}, step: {idx}, loss: {valid_loss}")
-                if valid_loss < best_valid_loss:
-                    best_valid_loss = valid_loss
-                    save_path = os.path.join(args.checkpoints, f"{total_step}_{valid_loss:.4f}.pth")
-                    torch.save(model.state_dict(), save_path)
-                    lg.info(f"[SAVE] {save_path}")
-
             total_step += 1
+
+        # evaluate each epoch
+        valid_loss, valid_seq_acc, valid_ans_acc = evaluate(model, valid_dataloader, tokenizer, args.valid_tsv)
+        lg.info(f"[VALID] epoch: {epoch}, step: {total_step}, loss: {valid_loss}, seq_acc: {valid_seq_acc}, ans_acc: {valid_ans_acc}")
+        if valid_loss < best_valid_loss:
+            best_valid_loss = valid_loss
+
+            # test
+            test_loss, test_seq_acc, test_ans_acc = evaluate(model, test_dataloader, tokenizer, args.test_tsv)
+            lg.info(f"[TEST] epoch: {epoch}, step: {total_step}, loss: {test_loss}, seq_acc: {test_seq_acc}, ans_acc: {test_ans_acc}")
+
+            # save
+            save_path = os.path.join(args.checkpoints, f"{total_step}_{valid_ans_acc:.4f}_{test_ans_acc:.4f}.pth")
+            torch.save(model.state_dict(), save_path)
+            lg.info(f"[SAVE] {save_path}")
 
 
 def evaluate(model, test_dataloader, tokenizer, tsv_path):
-    lg.info("Start evaluating...")
+    lg.info(f"Start evaluating {tsv_path} ...")
     model.eval()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -68,11 +73,6 @@ def evaluate(model, test_dataloader, tokenizer, tsv_path):
     total_loss = 0.
     with torch.no_grad():
         for bid, batch in enumerate(test_dataloader):
-            # if bid % 10 == 0:
-            #     print(bid, end=" ")
-            # if bid == len(test_dataloader) - 1:
-            #     print()
-
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             token_type_ids = batch["token_type_ids"].to(device)
@@ -93,10 +93,8 @@ def evaluate(model, test_dataloader, tokenizer, tsv_path):
                 ans_cord = set(ans_cord)
                 sqa_metric.add_pred(metadata, ans_cord)
     seq_acc, ans_acc = sqa_metric.get_acc()
-    lg.info(f"[VALID] {seq_acc}")
-    lg.info(f"[VALID] {ans_acc}")
     model.train()
-    return total_loss / len(test_dataloader)
+    return total_loss / len(test_dataloader), seq_acc, ans_acc
 
 
 def get_parser():
@@ -107,6 +105,7 @@ def get_parser():
     parser.add_argument("--test_tsv", type=str, default="data/SQA/test.tsv")
     parser.add_argument("--output_dir", type=str, default="output/0508/0_demo")
     parser.add_argument("--shuffle", action="store_true", help="shuffle training data")
+    parser.add_argument("--epochs", type=int, default=10)
 
     parser.add_argument("--debug", action="store_true")
     return parser
