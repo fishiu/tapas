@@ -106,6 +106,10 @@ def get_parser():
     parser.add_argument("--output_dir", type=str, default="output/0508/0_demo")
     parser.add_argument("--shuffle", action="store_true", help="shuffle training data")
     parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--batch_size", type=int, default=128)
+
+    parser.add_argument("--model_name", type=str, default="google/tapas-small")
+    parser.add_argument("--pretrain_model", type=str, help="pretrain model containing tapas table encoder")
 
     parser.add_argument("--debug", action="store_true")
     return parser
@@ -123,33 +127,76 @@ def make_config(args):
     init_logging(args.log_path, args.debug)
 
 
-def main():
-    sqa_path = "./data/SQA"
-    model_name = "google/tapas-base"
-    # model_name = "google/tapas-base-finetuned-sqa"
+def get_dataloader(args, tokenizer):
+    train_dataset = TableDataset(
+        csv_dir=args.csv_dir,
+        tsv_path=args.train_tsv,
+        tokenizer=tokenizer
+    )
+    valid_dataset = TableDataset(
+        csv_dir=args.csv_dir,
+        tsv_path=args.valid_tsv,
+        tokenizer=tokenizer,
+        is_eval=True
+    )
+    test_dataset = TableDataset(
+        csv_dir=args.csv_dir,
+        tsv_path=args.test_tsv,
+        tokenizer=tokenizer,
+        is_eval=True
+    )
+    train_dataloader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=args.shuffle,
+        collate_fn=partial(collate_fn, is_eval=False)
+    )
+    valid_dataloader = torch.utils.data.DataLoader(
+        valid_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        collate_fn=partial(collate_fn, is_eval=True)
+    )
+    test_dataloader = torch.utils.data.DataLoader(
+        test_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        collate_fn=partial(collate_fn, is_eval=True)
+    )
+    return train_dataloader, valid_dataloader, test_dataloader
 
+
+def init_model_from_pretrain(model, pretrain_model):
+    pretrained_dict = torch.load(pretrain_model)
+    # for param_name, param in pretrained_dict.items():
+    #     print(param_name, '\t', param.shape)
+    model_dict = model.state_dict()
+    for param_name, param in model_dict.items():
+        # print(param_name, '\t', param.shape)
+        if param_name.startswith('tapas'):
+            pretrained_name = param_name.replace('tapas.', 'table_encoder.', 1)
+            lg.debug(f"{param_name} is copied from {pretrained_name}")
+            model_dict[param_name] = pretrained_dict[pretrained_name]
+    model.load_state_dict(model_dict)
+    del pretrained_dict
+
+
+def main():
     parser = get_parser()
     args = parser.parse_args()
     make_config(args)
+    lg.info("=" * 50)
+    lg.info(args)
 
-    tokenizer = TapasTokenizer.from_pretrained(model_name)
-    model = TapasForQuestionAnswering.from_pretrained(model_name)
+    tokenizer = TapasTokenizer.from_pretrained(args.model_name)
+    model = TapasForQuestionAnswering.from_pretrained(args.model_name)
 
-    train_dataset = TableDataset(csv_dir=args.csv_dir,
-                                 tsv_path=args.train_tsv,
-                                 tokenizer=tokenizer)
-    valid_dataset = TableDataset(csv_dir=args.csv_dir,
-                                 tsv_path=args.valid_tsv,
-                                 tokenizer=tokenizer,
-                                 is_eval=True)
-    test_dataset = TableDataset(csv_dir=args.csv_dir,
-                                tsv_path=args.test_tsv,
-                                tokenizer=tokenizer,
-                                is_eval=True)
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=args.shuffle, collate_fn=partial(collate_fn, is_eval=False))
-    valid_dataloader = torch.utils.data.DataLoader(valid_dataset, batch_size=64, shuffle=False, collate_fn=partial(collate_fn, is_eval=True))
-    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=64, shuffle=False, collate_fn=partial(collate_fn, is_eval=True))
+    # load pretrained parameters
+    if args.pretrain_model:
+        init_model_from_pretrain(model, args.pretrain_model)
+        lg.info(f"{args.pretrain_model} is loaded into tapas")
 
+    train_dataloader, valid_dataloader, test_dataloader = get_dataloader(args, tokenizer)
     train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer, args)  # train
 
 

@@ -72,7 +72,7 @@ class TableCL(torch.nn.Module):
         return loss
 
 
-def train(model, optimizer, dataloader, args):
+def train(model: TableCL, optimizer, dataloader, args):
     model.train()
     total_step = 1
 
@@ -88,9 +88,11 @@ def train(model, optimizer, dataloader, args):
             if total_step % args.report_step == 0:
                 report_loss /= args.report_step
                 lg.info(f"[TRAIN] epoch: {epoch}, step: {step}/{len(dataloader)}, loss: {report_loss:.4f}")
-                save_name = f"{epoch}_{total_step}_{report_loss:.4f}.pt"
+                save_name = f"{epoch}_{total_step}_{report_loss:.4f}"
                 report_loss = 0.
                 if total_step % args.save_step == 0:
+                    torch.save(model.state_dict(), os.path.join(args.checkpoint_dir, f"{save_name}.pth"))
+                    torch.save(optimizer.state_dict(), os.path.join(args.checkpoint_dir, f"{save_name}.opt"))
                     lg.info(f"[SAVE] save model to {save_name}")
             total_step += 1
 
@@ -143,10 +145,14 @@ def main():
         args.checkpoint_dir.mkdir(parents=True)
         print("create checkpoint dir:", args.checkpoint_dir)
     args.log_path = args.output_dir / "train.log"
+    print("log path:", args.log_path)
     assert args.save_step % args.report_step == 0, "save_step should be multiple of report_step"
 
     # config logging
     init_logging(args.log_path, debug=args.debug)
+
+    lg.info("=" * 50)
+    lg.info(args)
 
     train_dataset = ToTToDataset(args.train_json, args)
     train_dataloader = torch.utils.data.DataLoader(train_dataset,
