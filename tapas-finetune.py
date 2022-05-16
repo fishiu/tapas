@@ -23,7 +23,8 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer,
     model.train()
 
     total_step = 0
-    best_valid_loss = 10000
+    best_valid_ans_acc = 0.
+    model_name = '?'
     for epoch in range(args.epochs):  # loop over the dataset multiple times
         lg.info(f"Epoch: {epoch}")
         data_iter = tqdm(enumerate(train_dataloader), total=len(train_dataloader), disable=True)
@@ -51,17 +52,20 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer,
         # evaluate each epoch
         valid_loss, valid_seq_acc, valid_ans_acc = evaluate(model, valid_dataloader, tokenizer, args.valid_tsv)
         lg.info(f"[VALID] epoch: {epoch}, step: {total_step}, loss: {valid_loss}, seq_acc: {valid_seq_acc}, ans_acc: {valid_ans_acc}")
-        if valid_loss < best_valid_loss:
-            best_valid_loss = valid_loss
+        if valid_ans_acc > best_valid_ans_acc:
+            best_valid_ans_acc = valid_ans_acc
 
             # test
             test_loss, test_seq_acc, test_ans_acc = evaluate(model, test_dataloader, tokenizer, args.test_tsv)
             lg.info(f"[TEST] epoch: {epoch}, step: {total_step}, loss: {test_loss}, seq_acc: {test_seq_acc}, ans_acc: {test_ans_acc}")
 
             # save
-            save_path = os.path.join(args.checkpoints, f"{total_step}_{valid_ans_acc:.4f}_{test_ans_acc:.4f}.pth")
+            model_name = f"{epoch}_{total_step}_{valid_ans_acc:.4f}_{test_ans_acc:.4f}"
+            save_path = os.path.join(args.checkpoints, f"{model_name}.pth")
             torch.save(model.state_dict(), save_path)
             lg.info(f"[SAVE] {save_path}")
+    # TODO collect best result
+    lg.info(f"[BEST] {model_name}")
 
 
 def evaluate(model, test_dataloader, tokenizer, tsv_path):
