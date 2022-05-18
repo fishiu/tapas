@@ -13,6 +13,7 @@ totto dataset
 import json
 import collections
 import logging
+import pathlib
 
 import pandas as pd
 import torch.utils.data
@@ -29,36 +30,72 @@ class ToTToException(Exception):
 class ToTToTable:
     """read json data and convert to TAPAS table format"""
     def __init__(self, json_data, config):
-        self.title = self.__merge_title(json_data["table_page_title"], json_data["table_section_title"])
-        self.table_df = self.__read_table(json_data["table"])
+        self.title = self._merge_title(json_data["table_page_title"], json_data["table_section_title"])
+        self.id = json_data["example_id"]
+        self.table_df = self._read_table(json_data["table"])
+
+    def __repr__(self):
+        return self.title
 
     @staticmethod
-    def __merge_title(page_title, section_title):
-        if len(page_title) + len(section_title) < 3:
-            raise ToTToException("title length < 3")
+    def _merge_title(page_title, section_title):
+        if len(page_title) + len(section_title) < 5:
+            raise ToTToException("title length < 5")
         if len(page_title) + len(section_title) > 256:
             raise ToTToException("title length > 256")
         return page_title + '. ' + section_title + '.'
 
     @staticmethod
-    def __read_table(table_data):
+    def _read_table(table_data):
         table = []
-        row_len_set = set()
+        vert_merge = {}  # vertical_merge_info_dict: start_pos, len, depth, value
+        rpt_set = set()
         for row_data in table_data:
             row = []
+            rpt = 0  # row pointer
             for cell_data in row_data:
+                while rpt in vert_merge:  # merge on this column
+                    info = vert_merge[rpt]
+                    row.extend([info["value"] for _ in range(info["len"])])  # fill row
+                    tmp = rpt
+                    rpt += info["len"]  # go forward
+                    info["depth"] -= 1
+                    if info["depth"] == 0:  # no remain depth to go
+                        del vert_merge[tmp]
+
+                # get basic info
                 row_span = cell_data["row_span"]
                 col_span = cell_data["column_span"]
                 cell_value = cell_data["value"]
+                # push into row
                 row.extend([cell_value for _ in range(col_span)])
-                if row_span > 1:
-                    # currently we only support row_span = 1
-                    raise ToTToException("row_span > 1")
-            row_len_set.add(len(row))
+
+                if row_span > 1:  # found a vertical merge
+                    assert rpt not in vert_merge, "rpt already exist in vert_merge"
+                    vert_merge[rpt] = {
+                        "value": cell_value,
+                        "len": col_span,
+                        "depth": row_span - 1,  # remaining
+                    }
+                rpt += col_span
+
+            # do not forget to check after the cell loop
+            while rpt in vert_merge:  # merge on this column
+                info = vert_merge[rpt]
+                row.extend([info["value"] for _ in range(info["len"])])  # fill row
+                tmp = rpt
+                rpt += info["len"]  # go forward
+                info["depth"] -= 1
+                if info["depth"] == 0:  # no remain depth to go
+                    del vert_merge[tmp]
+
+            # finally get a row, rpt should be grid width
             table.append(row)
-        if len(row_len_set) != 1:
-            raise ToTToException("row_len_set != 1")
+            rpt_set.add(rpt)
+
         row_size, col_size = len(table), len(table[0])
+        if len(rpt_set) != 1:
+            raise ToTToException("rpt set error")
         if col_size > 256 or row_size > 256:
             raise ToTToException("row/col size > 256")
         if col_size * row_size > 1280:
@@ -71,7 +108,7 @@ class ToTToDataset(torch.utils.data.Dataset):
     def __init__(self, json_path, args):
         self.args = args
         self.json_path = json_path
-        self.data = self.__read_data()
+        self.data = self._read_data()
         self.table_tokenizer = transformers.TapasTokenizer.from_pretrained(self.args.table_model)
         self.text_tokenizer = transformers.BertTokenizer.from_pretrained(self.args.text_model)
 
@@ -106,7 +143,7 @@ class ToTToDataset(torch.utils.data.Dataset):
             "table": table_encoding,
         }
 
-    def __read_data(self):
+    def _read_data(self):
         lg.info(f"read data from {self.json_path}")
         data = list()
         stat = list()
@@ -143,3 +180,23 @@ def collate_fn(table_batch):
         "token_type_ids": torch.stack([x["title"]["token_type_ids"] for x in table_batch]),
     }
     return table_batch_dict, title_batch_dict
+
+
+def merge_data():
+    """merge train, dev, test"""
+    train_path = pathlib.Path("../data/pretrain/totto/totto_train_data.jsonl")  # 120761
+    dev_path = pathlib.Path("../data/pretrain/totto/totto_dev_data.jsonl")  # 7700
+    test_path = pathlib.Path("../data/pretrain/totto/unlabeled_totto_test_data.jsonl")  # 7700
+    merge_path = pathlib.Path("../data/pretrain/totto/totto_merge_data.jsonl")
+    with merge_path.open('w') as f:
+        for path in [train_path, dev_path, test_path]:
+            cnt = 0
+            with path.open('r') as f_:
+                for line in f_:
+                    f.write(line)
+                    cnt += 1
+            print(f"{path} has {cnt} lines")
+
+
+if __name__ == "__main__":
+    merge_data()
