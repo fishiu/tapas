@@ -10,6 +10,7 @@
 common tools
 """
 import logging
+import pathlib
 
 import torch
 import torch.backends.cudnn
@@ -17,25 +18,22 @@ import numpy as np
 import random
 
 
-def init_logging(root_log_path, debug=False):
+def init_logging(root_log_path, debug=False, logger_name=None):
     fmt = logging.Formatter('%(asctime)s | %(levelname)s | %(filename)s | %(funcName)s | %(message)s',
                             datefmt='%m-%d %H:%M:%S')
-    root_logger = logging.getLogger()
-    root_hdl = logging.FileHandler(root_log_path)
-    root_hdl.setFormatter(fmt)
-    root_logger.addHandler(root_hdl)
-    root_logger.setLevel(logging.INFO)
+    if logger_name:  # not root logger
+        logger = logging.getLogger(logger_name)
+    else:  # root logger
+        logger = logging.getLogger()
+    hdl = logging.FileHandler(root_log_path)
+    hdl.setFormatter(fmt)
+    logger.addHandler(hdl)
+    logger.setLevel(logging.INFO)
     if debug:
         debug_hdl = logging.StreamHandler()
         debug_hdl.setFormatter(fmt)
-        root_logger.addHandler(debug_hdl)
-        root_logger.setLevel(logging.DEBUG)
-
-    # eval_logger = logging.getLogger('evaluation')
-    # eval_hdl = logging.FileHandler(eval_log_path)
-    # eval_hdl.setFormatter(fmt)
-    # eval_logger.addHandler(eval_hdl)
-    # eval_logger.setLevel(logging.INFO)
+        logger.addHandler(debug_hdl)
+        logger.setLevel(logging.DEBUG)
 
 
 def setup_seed(seed):
@@ -44,3 +42,24 @@ def setup_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
+
+
+def make_config(args):
+    setup_seed(args.seed)
+
+    args.device = torch.device(args.device)
+    args.output_dir = pathlib.Path(args.output_dir)
+    args.checkpoint_dir = args.output_dir / "checkpoints"
+    args.tensorboard_dir = args.output_dir / "tensorboard"
+    args.log_path = args.output_dir / "train.log"
+    if not args.output_dir.exists():
+        args.output_dir.mkdir()
+        print(f"create output dir: {args.output_dir}")
+    if not args.checkpoint_dir.exists():
+        args.checkpoint_dir.mkdir()
+        print(f"create checkpoint dir: {args.checkpoint_dir}")
+    if not args.tensorboard_dir.exists():
+        args.tensorboard_dir.mkdir()
+        print(f"create tensorboard dir: {args.tensorboard_dir}")
+    print(f"log path: {args.log_path}")
+    init_logging(args.log_path, debug=args.debug)

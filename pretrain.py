@@ -22,9 +22,10 @@ import torch.nn.functional
 import torch.utils.data
 import transformers
 import info_nce
+from torch.utils.tensorboard import SummaryWriter
 
 from dataset.totto import ToTToDataset, ToTToTable, collate_fn
-from utils.util import setup_seed, init_logging
+from utils.util import make_config
 
 
 lg = logging.getLogger()
@@ -73,6 +74,7 @@ class TableCL(torch.nn.Module):
 
 
 def train(model: TableCL, optimizer, dataloader, args):
+    tb = SummaryWriter(args.tensorboard_dir)
     model.train()
     total_step = 1
 
@@ -82,6 +84,7 @@ def train(model: TableCL, optimizer, dataloader, args):
             table_inputs, title_inputs = batch
             loss = model(table_inputs, title_inputs)
             report_loss += loss.item()
+            tb.add_scalar("loss", loss.item(), total_step)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -135,22 +138,8 @@ def get_parser():
 def main():
     parser = get_parser()
     args = parser.parse_args()
-    setup_seed(args.seed)
-
-    # make config
-    args.device = torch.device(args.device)
-    args.output_dir = pathlib.Path(args.output_dir)
-    args.checkpoint_dir = args.output_dir / "checkpoints"
-    if not args.checkpoint_dir.exists():
-        args.checkpoint_dir.mkdir(parents=True)
-        print("create checkpoint dir:", args.checkpoint_dir)
-    args.log_path = args.output_dir / "train.log"
-    print("log path:", args.log_path)
+    make_config(args)
     assert args.save_step % args.report_step == 0, "save_step should be multiple of report_step"
-
-    # config logging
-    init_logging(args.log_path, debug=args.debug)
-
     lg.info("=" * 50)
     lg.info(args)
 

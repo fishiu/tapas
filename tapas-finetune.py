@@ -1,15 +1,17 @@
 import os
 import logging
 import argparse
+import pathlib
 from functools import partial
 
 import torch
 import torch.utils.data
 from tqdm import tqdm
 from transformers import TapasConfig, TapasForQuestionAnswering, TapasTokenizer
+from torch.utils.tensorboard import SummaryWriter
 
 from utils.metrics import SqaMetric
-from utils.util import init_logging
+from utils.util import make_config
 from dataloader import TableDataset, collate_fn
 
 
@@ -19,6 +21,7 @@ lg = logging.getLogger()
 def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer, args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     optimizer = torch.optim.AdamW(model.parameters(), lr=5e-5)
+    tb = SummaryWriter(log_dir=args.tensorboard_dir)
     model.to(device)
     model.train()
 
@@ -43,7 +46,7 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer,
                             token_type_ids=token_type_ids,
                             labels=labels)
             loss = outputs.loss
-            # data_iter.set_postfix(loss=loss.item())
+            tb.add_scalar('train/loss', loss.item(), total_step)
             lg.info(f"[TRAIN] epoch: {epoch}, step: {idx} / {len(train_dataloader)}, loss: {loss.item()}")
             loss.backward()
             optimizer.step()
@@ -52,12 +55,16 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer,
         # evaluate each epoch
         valid_loss, valid_seq_acc, valid_ans_acc = evaluate(model, valid_dataloader, tokenizer, args.valid_tsv)
         lg.info(f"[VALID] epoch: {epoch}, step: {total_step}, loss: {valid_loss}, seq_acc: {valid_seq_acc}, ans_acc: {valid_ans_acc}")
+        tb.add_scalar('valid/loss', valid_loss, total_step)
+        tb.add_scalar('valid/ans_acc', valid_ans_acc, total_step)
         if valid_ans_acc > best_valid_ans_acc:
             best_valid_ans_acc = valid_ans_acc
 
             # test
             test_loss, test_seq_acc, test_ans_acc = evaluate(model, test_dataloader, tokenizer, args.test_tsv)
             lg.info(f"[TEST] epoch: {epoch}, step: {total_step}, loss: {test_loss}, seq_acc: {test_seq_acc}, ans_acc: {test_ans_acc}")
+            tb.add_scalar('test/loss', test_loss, total_step)
+            tb.add_scalar('test/ans_acc', test_ans_acc, total_step)
 
             # save
             model_name = f"{epoch}_{total_step}_{valid_ans_acc:.4f}_{test_ans_acc:.4f}"
@@ -111,24 +118,14 @@ def get_parser():
     parser.add_argument("--shuffle", action="store_true", help="shuffle training data")
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--device", type=str, default="cuda:0")
+    parser.add_argument("--seed", type=int, default=1107)
 
     parser.add_argument("--model_name", type=str, default="google/tapas-small")
     parser.add_argument("--pretrain_model", type=str, help="pretrain model containing tapas table encoder")
 
     parser.add_argument("--debug", action="store_true")
     return parser
-
-
-def make_config(args):
-    if not os.path.exists(args.output_dir):
-        os.makedirs(args.output_dir)
-        print(f"{args.output_dir} is created")
-    args.checkpoints = os.path.join(args.output_dir, "checkpoints")
-    if not os.path.exists(args.checkpoints):
-        os.makedirs(args.checkpoints)
-        print(f"{args.checkpoints} is created")
-    args.log_path = os.path.join(args.output_dir, "train.log")
-    init_logging(args.log_path, args.debug)
 
 
 def get_dataloader(args, tokenizer):
