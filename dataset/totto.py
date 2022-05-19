@@ -203,7 +203,7 @@ class ToTToDataset(torch.utils.data.Dataset):
                         aug_title = self.aug_bank.get_aug_sample(table.id, aug_type)
                         if aug_title:
                             table.aug_titles.append(aug_title)
-                        aug_stat.append(len(table.aug_titles))
+                    aug_stat.append(len(table.aug_titles))
                 except ToTToException as e:
                     stat.append(str(e))
                     continue
