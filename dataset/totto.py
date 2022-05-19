@@ -39,9 +39,11 @@ class ToTToTable:
 
     @staticmethod
     def _merge_title(page_title, section_title):
-        if len(page_title) + len(section_title) < 5:
+        page_title_len = len(page_title.split(" "))
+        section_title_len = len(section_title.split(" "))
+        if page_title_len + section_title_len < 5:
             raise ToTToException("title length < 5")
-        if len(page_title) + len(section_title) > 256:
+        if page_title_len + section_title_len > 128:
             raise ToTToException("title length > 256")
         return page_title + '. ' + section_title + '.'
 
@@ -149,7 +151,7 @@ class ToTToDataset(torch.utils.data.Dataset):
         stat = list()
         debug_cnt = 0
         with open(self.json_path, 'r') as f:
-            while not self.args.debug or (self.args.debug and debug_cnt < 1000):
+            while not self.args.debug or (self.args.debug and debug_cnt < 100):
                 # read json data for one table
                 totto_data_str = f.readline().strip()
                 if not totto_data_str: break
