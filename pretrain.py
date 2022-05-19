@@ -21,11 +21,11 @@ import torch
 import torch.nn.functional
 import torch.utils.data
 import transformers
-import info_nce
 from torch.utils.tensorboard import SummaryWriter
 
 from dataset.totto import ToTToDataset, ToTToTable, collate_fn
 from utils.util import make_config
+from utils.info_nce import InfoNCE
 
 
 lg = logging.getLogger()
@@ -36,20 +36,23 @@ class TableCL(torch.nn.Module):
         super(TableCL, self).__init__()
         # self.config = config
         self.device = config.device
-        self.text_encoder = transformers.BertModel.from_pretrained(config.text_model)
-        self.table_encoder = transformers.TapasModel.from_pretrained(config.table_model)
+        self.text_encoder = transformers.AutoModel.from_pretrained(config.text_model)
+        lg.info(f"text encoder type: {type(self.text_encoder)}")
+        self.table_encoder = transformers.AutoModel.from_pretrained(config.table_model)
+        lg.info(f"table encoder type: {type(self.table_encoder)}")
 
         self.text_proj = torch.nn.Linear(768, config.uni_dim)  # unified_dim = 512
         self.table_proj = torch.nn.Linear(512, config.uni_dim)  # unified_dim = 512
 
-        self.criterion = info_nce.InfoNCE()
+        self.criterion = InfoNCE()
 
-    def forward(self, table_inputs, text_inputs):
+    def forward(self, table_inputs, text_inputs, labels):
         """forward both table and text input, get InfoNCE loss
 
         Args:
-            table_inputs: [batch_size, table_seq_len]
-            text_inputs: [batch_size, text_seq_len]
+            table_inputs: [table_batch_size, table_seq_len]
+            text_inputs: [text_batch_size, text_seq_len]
+            labels: [text_batch_size]
 
         Returns:
             InfoNCE loss
@@ -64,12 +67,13 @@ class TableCL(torch.nn.Module):
         text_encoded = self.text_encoder(
             input_ids=text_inputs["input_ids"].to(self.device),
             attention_mask=text_inputs["attention_mask"].to(self.device),
-            token_type_ids=text_inputs["token_type_ids"].to(self.device),
+            # token_type_ids=text_inputs["token_type_ids"].to(self.device),
         )
-        text_embedded = self.text_proj(text_encoded.pooler_output)
+        text_pooler_out = text_encoded.last_hidden_state[:, 0, :]
+        text_embedded = self.text_proj(text_pooler_out)
 
         # table as query list, text as paired
-        loss = self.criterion(query=table_embedded, positive_key=text_embedded)  # todo better debug on this loss
+        loss = self.criterion(anchors=table_embedded, positives=text_embedded, labels=labels)
         return loss
 
 
@@ -81,8 +85,7 @@ def train(model: TableCL, optimizer, dataloader, args):
     for epoch in range(1, args.epochs + 1):  # start from 1
         report_loss = 0.
         for step, batch in enumerate(dataloader):
-            table_inputs, title_inputs = batch
-            loss = model(table_inputs, title_inputs)
+            loss = model(*batch)
             report_loss += loss.item()
             tb.add_scalar("loss", loss.item(), total_step)
             optimizer.zero_grad()
@@ -112,14 +115,12 @@ def get_parser():
 
     # data
     parser.add_argument("--max_title_length", type=int, default=128)  # todo? table max len?
+    parser.add_argument("--aug", nargs="*", type=str, choices=["w2v", "syno", "trans"], help="augment title for more positive samples")
+    parser.add_argument("--aug_dir", type=str, default="output/data/aug")
 
     # huggingface
-    # parser.add_argument("--table_encoder", type=str, default="google/tapas-base")
-    # parser.add_argument("--table_tokenizer", type=str, default="google/tapas-base")
-    # parser.add_argument("--text_encoder", type=str, default="bert-base-uncased")
-    # parser.add_argument("--text_tokenizer", type=str, default="bert-base-uncased")
     parser.add_argument("--table_model", type=str, default="google/tapas-small")
-    parser.add_argument("--text_model", type=str, default="bert-base-uncased")
+    parser.add_argument("--text_model", type=str, default="distilbert-base-uncased")
 
     # model
     parser.add_argument("--uni_dim", type=int, default=512, help="projection dim for both modality")
@@ -144,11 +145,12 @@ def main():
     lg.info(args)
 
     train_dataset = ToTToDataset(args.train_json, args)
+    num_workers = 0 if args.debug else 8
     train_dataloader = torch.utils.data.DataLoader(train_dataset,
                                                    batch_size=args.batch_size,
                                                    shuffle=args.shuffle,
                                                    collate_fn=collate_fn,
-                                                   num_workers=8)
+                                                   num_workers=num_workers)
 
     model = TableCL(args)
     model.to(args.device)
