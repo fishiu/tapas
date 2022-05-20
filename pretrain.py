@@ -41,8 +41,8 @@ class TableCL(torch.nn.Module):
         self.table_encoder = transformers.AutoModel.from_pretrained(config.table_model)
         lg.info(f"table encoder type: {type(self.table_encoder)}")
 
-        self.text_proj = torch.nn.Linear(768, config.uni_dim)  # unified_dim = 512
-        self.table_proj = torch.nn.Linear(512, config.uni_dim)  # unified_dim = 512
+        self.text_proj = torch.nn.Linear(config.text_hidden_dim, config.uni_dim)  # unified_dim = 512
+        self.table_proj = torch.nn.Linear(config.table_hidden_dim, config.uni_dim)  # unified_dim = 512
 
         self.criterion = InfoNCE()
 
@@ -80,7 +80,8 @@ class TableCL(torch.nn.Module):
 def train(model: TableCL, optimizer, dataloader, args):
     tb = SummaryWriter(args.tensorboard_dir)
     model.train()
-    total_step = 1
+    total_step = args.start_total_step
+    lg.info(f"start total step: {total_step}")
 
     for epoch in range(1, args.epochs + 1):  # start from 1
         report_loss = 0.
@@ -112,6 +113,9 @@ def get_parser():
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--report_step", type=int, default=10)
     parser.add_argument("--save_step", type=int, default=1000)
+    # continue
+    parser.add_argument("--load_checkpoint", type=str, default=None, help="load checkpoint for both model and optimizer")
+    parser.add_argument("--start_total_step", type=int, default=1, help="start from total_step")
 
     # data
     parser.add_argument("--max_title_length", type=int, default=128)  # todo? table max len?
@@ -124,6 +128,8 @@ def get_parser():
 
     # model
     parser.add_argument("--uni_dim", type=int, default=512, help="projection dim for both modality")
+    parser.add_argument("--text_hidden_dim", type=int, default=768, help="bert output dim")
+    parser.add_argument("--table_hidden_dim", type=int, default=512, help="tapas output dim")
 
     # training
     parser.add_argument("--epochs", type=int, default=100)
@@ -155,6 +161,10 @@ def main():
     model = TableCL(args)
     model.to(args.device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    if args.load_checkpoint:
+        model.load_state_dict(torch.load(args.load_checkpoint + ".pth"))
+        optimizer.load_state_dict(torch.load(args.load_checkpoint + ".opt"))
+        lg.info(f"[LOAD] load model and optimizer from {args.load_checkpoint}")
     train(model, optimizer, train_dataloader, args)
 
 
