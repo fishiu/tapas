@@ -19,6 +19,7 @@ lg = logging.getLogger()
 
 
 def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer, args):
+    assert args.checkpoint_dir.exists()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     optimizer = torch.optim.AdamW(model.parameters(), lr=5e-5)
     tb = SummaryWriter(log_dir=args.tensorboard_dir)
@@ -68,7 +69,7 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer,
 
             # save
             model_name = f"{epoch}_{total_step}_{valid_ans_acc:.4f}_{test_ans_acc:.4f}"
-            save_path = os.path.join(args.checkpoints, f"{model_name}.pth")
+            save_path = args.checkpoint_dir / f"{model_name}.pth"
             torch.save(model.state_dict(), save_path)
             lg.info(f"[SAVE] {save_path}")
     # TODO collect best result
