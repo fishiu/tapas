@@ -18,7 +18,7 @@ import numpy as np
 import random
 
 
-def init_logging(root_log_path, debug=False, logger_name=None):
+def init_logging(root_log_path, debug=False, logger_name=None, sum_log_path=None):
     fmt = logging.Formatter('%(asctime)s | %(levelname)s | %(filename)s | %(funcName)s | %(message)s',
                             datefmt='%m-%d %H:%M:%S')
     if logger_name:  # not root logger
@@ -34,6 +34,13 @@ def init_logging(root_log_path, debug=False, logger_name=None):
         debug_hdl.setFormatter(fmt)
         logger.addHandler(debug_hdl)
         logger.setLevel(logging.DEBUG)
+
+    if sum_log_path:
+        sum_logger = logging.getLogger('sum')
+        sum_hdl = logging.FileHandler(sum_log_path)
+        sum_hdl.setFormatter(fmt)
+        sum_logger.addHandler(sum_hdl)
+        sum_logger.setLevel(logging.INFO)
 
 
 def setup_seed(seed):
@@ -52,6 +59,7 @@ def make_config(args):
     args.checkpoint_dir = args.output_dir / "checkpoints"
     args.tensorboard_dir = args.output_dir / "tensorboard"
     args.log_path = args.output_dir / "train.log"
+    args.eval_log_path = args.output_dir / "eval.log"
     if not args.output_dir.exists():
         args.output_dir.mkdir()
         print(f"create output dir: {args.output_dir}")
@@ -62,4 +70,3 @@ def make_config(args):
         args.tensorboard_dir.mkdir()
         print(f"create tensorboard dir: {args.tensorboard_dir}")
     print(f"log path: {args.log_path}")
-    init_logging(args.log_path, debug=args.debug)

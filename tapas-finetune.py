@@ -11,11 +11,12 @@ from transformers import TapasConfig, TapasForQuestionAnswering, TapasTokenizer
 from torch.utils.tensorboard import SummaryWriter
 
 from utils.metrics import SqaMetric
-from utils.util import make_config
+from utils.util import make_config, init_logging
 from dataloader import TableDataset, collate_fn
 
 
 lg = logging.getLogger()
+slg = logging.getLogger("sum")
 
 
 def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer, args):
@@ -28,9 +29,10 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer,
 
     total_step = 0
     best_valid_ans_acc = 0.
+    best_valid_ans_acc_epoch = -1
     model_name = '?'
     for epoch in range(args.epochs):  # loop over the dataset multiple times
-        lg.info(f"Epoch: {epoch}")
+        slg.info(f"Epoch: {epoch}")
         data_iter = tqdm(enumerate(train_dataloader), total=len(train_dataloader), disable=True)
         for idx, batch in data_iter:
             # get the inputs;
@@ -55,15 +57,16 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer,
 
         # evaluate each epoch
         valid_loss, valid_seq_acc, valid_ans_acc = evaluate(model, valid_dataloader, tokenizer, args.valid_tsv)
-        lg.info(f"[VALID] epoch: {epoch}, step: {total_step}, loss: {valid_loss}, seq_acc: {valid_seq_acc}, ans_acc: {valid_ans_acc}")
+        slg.info(f"[VALID] epoch: {epoch}, step: {total_step}, loss: {valid_loss}, seq_acc: {valid_seq_acc}, ans_acc: {valid_ans_acc}")
         tb.add_scalar('valid/loss', valid_loss, total_step)
         tb.add_scalar('valid/ans_acc', valid_ans_acc, total_step)
         if valid_ans_acc > best_valid_ans_acc:
             best_valid_ans_acc = valid_ans_acc
+            best_valid_ans_acc_epoch = epoch
 
             # test
             test_loss, test_seq_acc, test_ans_acc = evaluate(model, test_dataloader, tokenizer, args.test_tsv)
-            lg.info(f"[TEST] epoch: {epoch}, step: {total_step}, loss: {test_loss}, seq_acc: {test_seq_acc}, ans_acc: {test_ans_acc}")
+            slg.info(f"[TEST] epoch: {epoch}, step: {total_step}, loss: {test_loss}, seq_acc: {test_seq_acc}, ans_acc: {test_ans_acc}")
             tb.add_scalar('test/loss', test_loss, total_step)
             tb.add_scalar('test/ans_acc', test_ans_acc, total_step)
 
@@ -71,9 +74,10 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer,
             model_name = f"{epoch}_{total_step}_{valid_ans_acc:.4f}_{test_ans_acc:.4f}"
             save_path = args.checkpoint_dir / f"{model_name}.pth"
             torch.save(model.state_dict(), save_path)
-            lg.info(f"[SAVE] {save_path}")
+            slg.info(f"[SAVE] {save_path}")
+        slg.info(f"[SUM] epoch: {epoch}, step: {total_step}, best_valid_ans_acc({best_valid_ans_acc_epoch}): {best_valid_ans_acc}")
     # TODO collect best result
-    lg.info(f"[BEST] {model_name}")
+    slg.info(f"[BEST] {model_name}")
 
 
 def evaluate(model, test_dataloader, tokenizer, tsv_path):
@@ -187,8 +191,9 @@ def main():
     parser = get_parser()
     args = parser.parse_args()
     make_config(args)
-    lg.info("=" * 50)
-    lg.info(args)
+    init_logging(args.log_path, debug=args.debug, sum_log_path=args.eval_log_path)
+    slg.info("=" * 50)
+    slg.info(args)
 
     tokenizer = TapasTokenizer.from_pretrained(args.model_name)
     model = TapasForQuestionAnswering.from_pretrained(args.model_name)
@@ -196,7 +201,7 @@ def main():
     # load pretrained parameters
     if args.pretrain_model:
         init_model_from_pretrain(model, args.pretrain_model)
-        lg.info(f"{args.pretrain_model} is loaded into tapas")
+        slg.info(f"{args.pretrain_model} is loaded into tapas")
 
     train_dataloader, valid_dataloader, test_dataloader = get_dataloader(args, tokenizer)
     train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer, args)  # train

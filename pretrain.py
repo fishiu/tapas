@@ -24,7 +24,7 @@ import transformers
 from torch.utils.tensorboard import SummaryWriter
 
 from dataset.totto import ToTToDataset, ToTToTable, collate_fn
-from utils.util import make_config
+from utils.util import make_config, init_logging
 from utils.info_nce import InfoNCE
 
 
@@ -146,6 +146,7 @@ def main():
     parser = get_parser()
     args = parser.parse_args()
     make_config(args)
+    init_logging(args.log_path, debug=args.debug)
     assert args.save_step % args.report_step == 0, "save_step should be multiple of report_step"
     lg.info("=" * 50)
     lg.info(args)
