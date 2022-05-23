@@ -119,7 +119,7 @@ def get_parser():
 
     # data
     parser.add_argument("--max_title_length", type=int, default=128)  # todo? table max len?
-    parser.add_argument("--aug", nargs="*", type=str, choices=["w2v", "syno", "trans"], help="augment title for more positive samples")
+    parser.add_argument("--aug", nargs="*", type=str, choices=["w2v", "syno", "trans"], default=[], help="augment title for more positive samples")
     parser.add_argument("--aug_dir", type=str, default="output/data/aug")
 
     # huggingface

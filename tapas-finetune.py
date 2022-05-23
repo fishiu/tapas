@@ -21,7 +21,7 @@ slg = logging.getLogger("sum")
 
 def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer, args):
     assert args.checkpoint_dir.exists()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda")
     optimizer = torch.optim.AdamW(model.parameters(), lr=5e-5)
     tb = SummaryWriter(log_dir=args.tensorboard_dir)
     model.to(device)
@@ -56,7 +56,7 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer,
             total_step += 1
 
         # evaluate each epoch
-        valid_loss, valid_seq_acc, valid_ans_acc = evaluate(model, valid_dataloader, tokenizer, args.valid_tsv)
+        valid_loss, valid_seq_acc, valid_ans_acc = evaluate(model, valid_dataloader, tokenizer, args.valid_tsv, args)
         slg.info(f"[VALID] epoch: {epoch}, step: {total_step}, loss: {valid_loss}, seq_acc: {valid_seq_acc}, ans_acc: {valid_ans_acc}")
         tb.add_scalar('valid/loss', valid_loss, total_step)
         tb.add_scalar('valid/ans_acc', valid_ans_acc, total_step)
@@ -65,7 +65,7 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer,
             best_valid_ans_acc_epoch = epoch
 
             # test
-            test_loss, test_seq_acc, test_ans_acc = evaluate(model, test_dataloader, tokenizer, args.test_tsv)
+            test_loss, test_seq_acc, test_ans_acc = evaluate(model, test_dataloader, tokenizer, args.test_tsv, args)
             slg.info(f"[TEST] epoch: {epoch}, step: {total_step}, loss: {test_loss}, seq_acc: {test_seq_acc}, ans_acc: {test_ans_acc}")
             tb.add_scalar('test/loss', test_loss, total_step)
             tb.add_scalar('test/ans_acc', test_ans_acc, total_step)
@@ -80,10 +80,10 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, tokenizer,
     slg.info(f"[BEST] {model_name}")
 
 
-def evaluate(model, test_dataloader, tokenizer, tsv_path):
+def evaluate(model, test_dataloader, tokenizer, tsv_path, args):
     lg.info(f"Start evaluating {tsv_path} ...")
     model.eval()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda")
 
     sqa_metric = SqaMetric(tsv_path)
     total_loss = 0.
@@ -123,7 +123,6 @@ def get_parser():
     parser.add_argument("--shuffle", action="store_true", help="shuffle training data")
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch_size", type=int, default=128)
-    parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--seed", type=int, default=1107)
 
     parser.add_argument("--model_name", type=str, default="google/tapas-small")

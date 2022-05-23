@@ -187,7 +187,7 @@ class ToTToDataset(torch.utils.data.Dataset):
         lg.info(f"read data from {self.json_path}")
         data = list()
         stat = list()
-        aug_stat = list()
+        aug_stat = {aug_type: 0 for aug_type in self.aug_types}
         debug_cnt = 0
         with open(self.json_path, 'r') as f:
             while not self.args.debug or (self.args.debug and debug_cnt < 100):
@@ -198,21 +198,21 @@ class ToTToDataset(torch.utils.data.Dataset):
 
                 try:
                     table = ToTToTable(totto_data, self.args)
+                except ToTToException as e:
+                    stat.append(str(e))
+                    continue
+                else:
                     # aug title
                     for aug_type in self.aug_types:
                         aug_title = self.aug_bank.get_aug_sample(table.id, aug_type)
                         if aug_title:
                             table.aug_titles.append(aug_title)
-                    aug_stat.append(len(table.aug_titles))
-                except ToTToException as e:
-                    stat.append(str(e))
-                    continue
-                else:
+                            aug_stat[aug_type] += 1
                     stat.append("success")
                     data.append(table)
                     debug_cnt += 1
-        lg.info(collections.Counter(stat).most_common())
-        lg.info(collections.Counter(aug_stat).most_common())
+        lg.info(f"table stat: {collections.Counter(stat).most_common()}")
+        lg.info(f"aug stat: {aug_stat}")
         return data
 
 

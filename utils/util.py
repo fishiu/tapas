@@ -9,6 +9,7 @@
 
 common tools
 """
+import os
 import logging
 import pathlib
 
@@ -52,9 +53,9 @@ def setup_seed(seed):
 
 
 def make_config(args):
+    print(f"visible_device: {os.environ['CUDA_VISIBLE_DEVICES']}")
+    print(f"cuda device count: {torch.cuda.device_count()}")
     setup_seed(args.seed)
-
-    args.device = torch.device(args.device)
     args.output_dir = pathlib.Path(args.output_dir)
     args.checkpoint_dir = args.output_dir / "checkpoints"
     args.tensorboard_dir = args.output_dir / "tensorboard"
