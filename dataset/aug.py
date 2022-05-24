@@ -24,6 +24,7 @@ import nlpaug
 import nlpaug.augmenter.word as naw
 
 import totto
+from base import BaseDataset
 
 
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
@@ -65,7 +66,7 @@ def test_speed(aug_type: str, dataset: totto.ToTToDataset):
     print(f'{aug_type}: init time {init_time}s, run time {run_time}s')
 
 
-def pipeline(aug_type: str, dataset: totto.ToTToDataset, args):
+def pipeline(aug_type: str, dataset: BaseDataset, save_path, args):
     print(f"aug for {aug_type}")
     aug = init_aug(aug_type)
     print(f"augmenter init done")
@@ -92,9 +93,7 @@ def pipeline(aug_type: str, dataset: totto.ToTToDataset, args):
                 'ori': table.title,
                 'aug': augmented_text[i],
             })
-
-    pd.DataFrame(res_list).to_csv(args.csv_path, index=False)
-
+    pd.DataFrame(res_list).to_csv(save_path, index=False)
 
 def init_aug(aug_type: str):
     if aug_type == 'ctx':
@@ -119,20 +118,20 @@ def main():
     parser.add_argument("--table_model", type=str, default="google/tapas-small")
     parser.add_argument("--text_model", type=str, default="bert-base-uncased")
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--aug_type", type=str, choices=["syno", "w2v", "trans"], required=True)
+    parser.add_argument("--aug", type=str, choices=["syno", "w2v", "trans"], required=True)
     parser.add_argument("--batch_size", type=int, default=16)
     args = parser.parse_args()
 
     args.output_dir = pathlib.Path(args.output_dir)
     if not args.output_dir.exists():
         args.output_dir.mkdir(parents=True)
-    args.csv_path = args.output_dir / f'{args.aug_type}.csv'
     print(args)
 
     logging.basicConfig(level=logging.INFO)
 
     dataset = get_dataset(args)
-    pipeline(args.aug_type, dataset, args)
+    csv_path = args.output_dir / f'{args.aug_type}.csv'
+    pipeline(args.aug_type, dataset, csv_path, args)
 
 
 if __name__ == "__main__":

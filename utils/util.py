@@ -53,8 +53,11 @@ def setup_seed(seed):
 
 
 def make_config(args):
-    print(f"visible_device: {os.environ['CUDA_VISIBLE_DEVICES']}")
-    print(f"cuda device count: {torch.cuda.device_count()}")
+    if "CUDA_VISIBLE_DEVICES" in os.environ:
+        print(f"visible_device: {os.environ['CUDA_VISIBLE_DEVICES']}")
+        print(f"cuda device count: {torch.cuda.device_count()}")
+    else:
+        print("no CUDA_VISIBLE_DEVICES env")
     setup_seed(args.seed)
     args.output_dir = pathlib.Path(args.output_dir)
     args.checkpoint_dir = args.output_dir / "checkpoints"

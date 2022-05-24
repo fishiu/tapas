@@ -23,7 +23,7 @@ import torch.utils.data
 import transformers
 from torch.utils.tensorboard import SummaryWriter
 
-from dataset.totto import ToTToDataset, ToTToTable, collate_fn
+from dataset import ToTToDataset, ToTToTable, Ar5ivTable, Ar5ivDataset, collate_fn
 from utils.util import make_config, init_logging
 from utils.info_nce import InfoNCE
 
@@ -108,7 +108,7 @@ def get_parser():
     parser = argparse.ArgumentParser()
 
     # I/O
-    parser.add_argument("--train_json", type=str, default="data/pretrain/totto/totto_train_data.jsonl")
+    parser.add_argument("--dataset", type=str, choices=["ar5iv", "totto"], required=True)
     parser.add_argument("--output_dir", type=str, default="output/pretrain/0_demo")
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--report_step", type=int, default=10)
@@ -120,7 +120,7 @@ def get_parser():
     # data
     parser.add_argument("--max_title_length", type=int, default=128)  # todo? table max len?
     parser.add_argument("--aug", nargs="*", type=str, choices=["w2v", "syno", "trans"], default=[], help="augment title for more positive samples")
-    parser.add_argument("--aug_dir", type=str, default="output/data/aug")
+    parser.add_argument("--aug_dir", type=str)
 
     # huggingface
     parser.add_argument("--table_model", type=str, default="google/tapas-small")
@@ -142,6 +142,15 @@ def get_parser():
     return parser
 
 
+def get_dataset(args):
+    if args.dataset == "ar5iv":
+        return Ar5ivDataset(pathlib.Path("data/ar5iv_csv/"), args)
+    elif args.dataset == "totto":
+        return ToTToDataset("data/pretrain/totto/totto_train_data.jsonl", args)
+    else:
+        raise ValueError(f"unknown dataset: {args.dataset}")
+
+
 def main():
     parser = get_parser()
     args = parser.parse_args()
@@ -151,7 +160,8 @@ def main():
     lg.info("=" * 50)
     lg.info(args)
 
-    train_dataset = ToTToDataset(args.train_json, args)
+    train_dataset = get_dataset(args)
+
     num_workers = 0 if args.debug else 8
     train_dataloader = torch.utils.data.DataLoader(train_dataset,
                                                    batch_size=args.batch_size,
@@ -167,20 +177,6 @@ def main():
         optimizer.load_state_dict(torch.load(args.load_checkpoint + ".opt"))
         lg.info(f"[LOAD] load model and optimizer from {args.load_checkpoint}")
     train(model, optimizer, train_dataloader, args)
-
-
-def debug_table(json_path, args):
-    with open(json_path, 'r') as f:
-        table_data = json.load(f)
-    table = ToTToTable(table_data, args)
-    tokenizer = transformers.TapasTokenizer.from_pretrained(args.table_tokenizer)
-    table_encoding = tokenizer(
-        table=table.table_df,
-        queries=[""],
-        padding="max_length",
-        truncation=True,
-        return_tensors="pt",
-    )
 
 
 if __name__ == "__main__":

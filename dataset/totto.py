@@ -9,16 +9,14 @@
 
 totto dataset
 """
-
 import json
 import collections
 import logging
 import pathlib
 
 import pandas as pd
-import torch.utils.data
-import transformers
 
+from .base import BaseDataset
 
 lg = logging.getLogger()
 
@@ -27,37 +25,9 @@ class ToTToException(Exception):
     ...
 
 
-class AugBank:
-    def __init__(self, aug_types: list, aug_data_dir: pathlib.Path):
-        self.aug_types = aug_types
-        self.aug_data_dir = aug_data_dir
-        self.aug_data = dict()
-        self._load_aug_data()
-
-    def _load_aug_data(self):
-        for aug_type in self.aug_types:
-            aug_data_path = self.aug_data_dir / f"{aug_type}.csv"
-            aug_data = pd.read_csv(aug_data_path, index_col=0)
-            aug_data = aug_data[~aug_data.index.duplicated(keep='first')]
-            self.aug_data[aug_type] = aug_data.to_dict("index")
-            lg.info(f"load aug data {aug_type} from {aug_data_path}")
-
-    def get_aug_sample(self, table_id, aug_type):
-        if aug_type not in self.aug_types:
-            raise NameError(f"aug_type {aug_type} not in {self.aug_types}")
-        if table_id not in self.aug_data[aug_type]:
-            return
-        data = self.aug_data[aug_type][table_id]
-        ori_title = data['ori']
-        aug_title = data['aug']
-        if ori_title == aug_title:
-            return
-        return aug_title  # debug, return only aug later
-
-
 class ToTToTable:
     """read json data and convert to TAPAS table format"""
-    def __init__(self, json_data, config):
+    def __init__(self, json_data):
         self.title = self._merge_title(json_data["table_page_title"], json_data["table_section_title"])
         self.id = json_data["example_id"]
         self.table_df = self._read_table(json_data["table"])
@@ -73,7 +43,7 @@ class ToTToTable:
         if page_title_len + section_title_len < 5:
             raise ToTToException("title length < 5")
         if page_title_len + section_title_len > 128:
-            raise ToTToException("title length > 256")
+            raise ToTToException("title length > 128")
         return page_title + '. ' + section_title + '.'
 
     @staticmethod
@@ -135,53 +105,11 @@ class ToTToTable:
         return table
 
 
-class ToTToDataset(torch.utils.data.Dataset):
+class ToTToDataset(BaseDataset):
     def __init__(self, json_path, args):
-        self.args = args
-        self.aug_types = args.aug
+        super(ToTToDataset, self).__init__(args)
         self.json_path = json_path
-        self.aug_bank = AugBank(self.aug_types, pathlib.Path(args.aug_dir))
         self.data = self._read_data()
-
-        self.table_tokenizer = transformers.AutoTokenizer.from_pretrained(self.args.table_model)
-        lg.info(f"table tokenizer type: {type(self.table_tokenizer)}")
-        self.text_tokenizer = transformers.AutoTokenizer.from_pretrained(self.args.text_model)
-        lg.info(f"text tokenizer type: {type(self.text_tokenizer)}")
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        """todo make sure the data size"""
-        item = self.data[idx]
-        # encode title
-        title_encoding_list = []
-        pos_titles = [item.title] + item.aug_titles  # add original title
-        for title in pos_titles:
-            title_encoding = self.text_tokenizer(
-                title,
-                padding="max_length",  # todo ?
-                truncation=True,
-                max_length=self.args.max_title_length,
-                return_tensors="pt",
-            )
-            title_encoding = {key: value.squeeze(0) for key, value in title_encoding.items()}
-            title_encoding_list.append(title_encoding)
-
-        # encode table
-        table_encoding = self.table_tokenizer(
-            table=item.table_df,
-            queries=[""],
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt",
-        )  # todo need debugging
-        table_encoding = {key: value.squeeze(0) for key, value in table_encoding.items()}
-
-        return {
-            "title": title_encoding_list,
-            "table": table_encoding,
-        }
 
     def _read_data(self):
         lg.info(f"read data from {self.json_path}")
@@ -197,7 +125,7 @@ class ToTToDataset(torch.utils.data.Dataset):
                 totto_data = json.loads(totto_data_str)
 
                 try:
-                    table = ToTToTable(totto_data, self.args)
+                    table = ToTToTable(totto_data)
                 except ToTToException as e:
                     stat.append(str(e))
                     continue
@@ -214,28 +142,6 @@ class ToTToDataset(torch.utils.data.Dataset):
         lg.info(f"table stat: {collections.Counter(stat).most_common()}")
         lg.info(f"aug stat: {aug_stat}")
         return data
-
-
-def collate_fn(batch):
-    table_batch = [item["table"] for item in batch]
-    table_batch_dict = {
-        "input_ids": torch.stack([x["input_ids"] for x in table_batch]),
-        "attention_mask": torch.stack([x["attention_mask"] for x in table_batch]),
-        "token_type_ids": torch.stack([x["token_type_ids"] for x in table_batch]),
-    }
-
-    title_batch = []
-    label_batch = []
-    for i, item in enumerate(batch):
-        title_list = item["title"]  # a series of positive titles
-        title_batch.extend(title_list)
-        label_batch.extend([i] * len(title_list))
-    title_batch_dict = {
-        "input_ids": torch.stack([x["input_ids"] for x in title_batch]),
-        "attention_mask": torch.stack([x["attention_mask"] for x in title_batch]),
-        # "token_type_ids": torch.stack([x["token_type_ids"] for x in title_batch]),
-    }
-    return table_batch_dict, title_batch_dict, label_batch
 
 
 def merge_data():

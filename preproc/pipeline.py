@@ -11,6 +11,7 @@ pipeline for data preprocessing
 """
 import os
 import pathlib
+import re
 import time
 import logging
 import argparse
@@ -235,5 +236,29 @@ def multi_run():
     print('All subprocesses done.')
 
 
+def convert_caption(caption):
+    caption = re.sub(r"\s+", " ", caption)
+    if res := re.match(r"^\s?\([a-zA-Z0-9]{1,3}\)\s?\:?\s?(.*)", caption):
+        return res.group(1)
+    if res := re.match(r"^\s?(?:TABLE|table|Table)\s*.{0,4}[\:\.]\s*(.*)", caption):
+        return res.group(1)
+    print(caption)
+    return caption
+
+
+def convert():
+    csv_dir = pathlib.Path("../data/ar5iv_csv/")
+    for d in csv_dir.iterdir():
+        if not d.is_dir():
+            continue
+        meta_path = d / "meta.csv"
+        df = pd.read_csv(meta_path)
+        df["title"] = df["caption"].apply(convert_caption)
+        new_meta_path = d / "meta_title.csv"
+        df.to_csv(new_meta_path, index=False)
+        print(f"convert {meta_path} to {new_meta_path}")
+
+
 if __name__ == "__main__":
-    multi_run()
+    # multi_run()
+    convert()
